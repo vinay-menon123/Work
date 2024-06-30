@@ -1,46 +1,62 @@
-import pandas as pd
-import xlsxwriter
+import pyarrow.csv as pv
+import numpy as np
+from openpyxl import Workbook
+from openpyxl.styles import PatternFill
 import time
+import math
+
+def safe_value(value):
+    if isinstance(value, (int, float)):
+        if math.isnan(value) or math.isinf(value):
+            return ""
+    return str(value)
 
 def process_csv_to_excel(input_csv, output_excel, columns_to_string, column_b_name):
     start_time = time.time()
 
-    # Create Excel workbook and worksheet
-    workbook = xlsxwriter.Workbook(output_excel, {'constant_memory': True})
-    worksheet = workbook.add_worksheet()
+    # Read entire CSV using pyarrow (faster than pandas for large files)
+    table = pv.read_csv(input_csv)
+    df = table.to_pandas()
 
-    # Create cell format for coloring
-    cell_format = workbook.add_format({'bg_color': '#FFFF00'})
+    # Convert specified columns to string
+    for col in columns_to_string:
+        if col in df.columns:
+            df[col] = df[col].astype(str)
 
-    # Read CSV in chunks
-    chunk_size = 100000
-    row_offset = 0
+    # Create workbook and worksheet
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet()
 
-    for chunk in pd.read_csv(input_csv, chunksize=chunk_size):
-        # Convert specified columns to string
-        for col in columns_to_string:
-            if col in chunk.columns:
-                chunk[col] = chunk[col].astype(str)
+    # Prepare column B data
+    column_b_index = df.columns.get_loc(column_b_name)
+    column_b_data = df[column_b_name].str.split(',').to_numpy()
 
-        # Write header if it's the first chunk
-        if row_offset == 0:
-            for col, heading in enumerate(chunk.columns):
-                worksheet.write(0, col, heading)
-            row_offset = 1
+    # Prepare fill pattern
+    yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
 
-        # Write data and apply coloring
-        for _, row in chunk.iterrows():
-            columns_to_color = set(row[column_b_name].split(','))
-            for col_index, value in enumerate(row):
-                if chunk.columns[col_index] in columns_to_color:
-                    worksheet.write(row_offset, col_index, value, cell_format)
-                else:
-                    worksheet.write(row_offset, col_index, value)
-            row_offset += 1
+    # Write header
+    ws.append([safe_value(col) for col in df.columns])
 
-        print(f"Processed {row_offset} rows...")
+    # Convert DataFrame to numpy array for faster access
+    data = df.to_numpy()
 
-    workbook.close()
+    # Process rows
+    for i, row in enumerate(data):
+        excel_row = []
+        columns_to_color = set(column_b_data[i])
+        for j, value in enumerate(row):
+            cell_value = safe_value(value)
+            if df.columns[j] in columns_to_color:
+                cell = ws.cell(row=i+2, column=j+1, value=cell_value)
+                cell.fill = yellow_fill
+            else:
+                excel_row.append(cell_value)
+        ws.append(excel_row)
+
+        if (i + 1) % 10000 == 0:
+            print(f"Processed {i + 1} rows...")
+
+    wb.save(output_excel)
 
     end_time = time.time()
     print(f"Processing completed in {end_time - start_time:.2f} seconds")
