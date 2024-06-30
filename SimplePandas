@@ -4,6 +4,12 @@ from openpyxl import Workbook
 from openpyxl.styles import PatternFill
 import time
 import math
+import chardet
+
+def detect_encoding(file_path):
+    with open(file_path, 'rb') as file:
+        raw = file.read(10000)  # Read a chunk of the file
+    return chardet.detect(raw)['encoding']
 
 def safe_value(value):
     if isinstance(value, (int, float)):
@@ -14,8 +20,19 @@ def safe_value(value):
 def process_csv_to_excel(input_csv, output_excel, columns_to_string, column_b_name, column_c_name, filter_value):
     start_time = time.time()
 
-    # Read entire CSV using pyarrow (faster than pandas for large files)
-    table = pv.read_csv(input_csv)
+    # Detect file encoding
+    encoding = detect_encoding(input_csv)
+    print(f"Detected encoding: {encoding}")
+
+    # Read entire CSV using pyarrow with detected encoding
+    try:
+        parse_options = pv.ParseOptions(encoding=encoding)
+        table = pv.read_csv(input_csv, parse_options=parse_options)
+    except:
+        print("Failed with detected encoding. Trying UTF-8...")
+        parse_options = pv.ParseOptions(encoding='utf-8')
+        table = pv.read_csv(input_csv, parse_options=parse_options)
+
     df = table.to_pandas()
 
     # Convert specified columns to string
