@@ -11,7 +11,7 @@ def safe_value(value):
             return ""
     return str(value)
 
-def process_csv_to_excel(input_csv, output_excel, columns_to_string, column_b_name):
+def process_csv_to_excel(input_csv, output_excel, columns_to_string, column_b_name, column_c_name, filter_value):
     start_time = time.time()
 
     # Read entire CSV using pyarrow (faster than pandas for large files)
@@ -27,9 +27,9 @@ def process_csv_to_excel(input_csv, output_excel, columns_to_string, column_b_na
     wb = Workbook(write_only=True)
     ws = wb.create_sheet()
 
-    # Prepare column B data
+    # Prepare column indices
     column_b_index = df.columns.get_loc(column_b_name)
-    column_b_data = df[column_b_name].str.split(',').to_numpy()
+    column_c_index = df.columns.get_loc(column_c_name)
 
     # Prepare fill pattern
     yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
@@ -43,14 +43,18 @@ def process_csv_to_excel(input_csv, output_excel, columns_to_string, column_b_na
     # Process rows
     for i, row in enumerate(data):
         excel_row = []
-        columns_to_color = set(column_b_data[i])
-        for j, value in enumerate(row):
-            cell_value = safe_value(value)
-            if df.columns[j] in columns_to_color:
-                cell = ws.cell(row=i+2, column=j+1, value=cell_value)
-                cell.fill = yellow_fill
-            else:
-                excel_row.append(cell_value)
+        if row[column_b_index] == filter_value:
+            columns_to_color = set(str(row[column_c_index]).split(','))
+            for j, value in enumerate(row):
+                cell_value = safe_value(value)
+                if df.columns[j] in columns_to_color:
+                    cell = ws.cell(row=i+2, column=j+1, value=cell_value)
+                    cell.fill = yellow_fill
+                else:
+                    excel_row.append(cell_value)
+        else:
+            excel_row = [safe_value(value) for value in row]
+        
         ws.append(excel_row)
 
         if (i + 1) % 10000 == 0:
@@ -66,5 +70,7 @@ input_csv = 'huge_file.csv'
 output_excel = 'output_file.xlsx'
 columns_to_string = ['Column1', 'Column2']
 column_b_name = 'ColumnB'  # Replace with the actual name of your column B
+column_c_name = 'ColumnC'  # Replace with the actual name of your column C
+filter_value = 'A'  # Replace with the actual value you want to filter on in column B
 
-process_csv_to_excel(input_csv, output_excel, columns_to_string, column_b_name)
+process_csv_to_excel(input_csv, output_excel, columns_to_string, column_b_name, column_c_name, filter_value)
