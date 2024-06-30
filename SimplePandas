@@ -1,4 +1,4 @@
-import pyarrow.csv as pv
+import pandas as pd
 import numpy as np
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill
@@ -24,16 +24,12 @@ def process_csv_to_excel(input_csv, output_excel, columns_to_string, column_b_na
     encoding = detect_encoding(input_csv)
     print(f"Detected encoding: {encoding}")
 
-    # Read entire CSV using pyarrow with detected encoding
+    # Read CSV using pandas with detected encoding
     try:
-        parse_options = pv.ParseOptions(encoding=encoding)
-        table = pv.read_csv(input_csv, parse_options=parse_options)
+        df = pd.read_csv(input_csv, encoding=encoding)
     except:
         print("Failed with detected encoding. Trying UTF-8...")
-        parse_options = pv.ParseOptions(encoding='utf-8')
-        table = pv.read_csv(input_csv, parse_options=parse_options)
-
-    df = table.to_pandas()
+        df = pd.read_csv(input_csv, encoding='utf-8')
 
     # Convert specified columns to string
     for col in columns_to_string:
@@ -54,14 +50,11 @@ def process_csv_to_excel(input_csv, output_excel, columns_to_string, column_b_na
     # Write header
     ws.append([safe_value(col) for col in df.columns])
 
-    # Convert DataFrame to numpy array for faster access
-    data = df.to_numpy()
-
     # Process rows
-    for i, row in enumerate(data):
+    for i, row in df.iterrows():
         excel_row = []
-        if row[column_b_index] == filter_value:
-            columns_to_color = set(str(row[column_c_index]).split(','))
+        if row[column_b_name] == filter_value:
+            columns_to_color = set(str(row[column_c_name]).split(','))
             for j, value in enumerate(row):
                 cell_value = safe_value(value)
                 if df.columns[j] in columns_to_color:
