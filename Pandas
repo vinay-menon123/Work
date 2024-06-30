@@ -1,0 +1,80 @@
+import pandas as pd
+import csv
+import xlsxwriter
+import multiprocessing
+import time
+from itertools import islice
+
+def process_chunk(chunk, columns_to_string, header):
+    df = pd.DataFrame(chunk, columns=header)
+    for col in columns_to_string:
+        if col in df.columns:
+            df[col] = df[col].astype(str)
+    return df.values.tolist()
+
+def write_chunk(worksheet, chunk, row_offset, header, column_b_index, cell_format):
+    for row_index, row in enumerate(chunk, start=row_offset):
+        columns_to_color = set(row[column_b_index].split(','))
+        for col_index, value in enumerate(row):
+            if header[col_index] in columns_to_color:
+                worksheet.write(row_index, col_index, value, cell_format)
+            else:
+                worksheet.write(row_index, col_index, value)
+
+def process_csv_to_excel(input_csv, output_excel, columns_to_string, column_b_name):
+    start_time = time.time()
+
+    # Read header
+    with open(input_csv, 'r') as f:
+        reader = csv.reader(f)
+        header = next(reader)
+
+    # Find the index of column B
+    column_b_index = header.index(column_b_name)
+
+    # Create Excel workbook and worksheet
+    workbook = xlsxwriter.Workbook(output_excel, {'constant_memory': True})
+    worksheet = workbook.add_worksheet()
+
+    # Write header
+    for col, heading in enumerate(header):
+        worksheet.write(0, col, heading)
+
+    # Create cell format for coloring
+    cell_format = workbook.add_format({'bg_color': '#FFFF00'})
+
+    chunk_size = 100000
+    num_processes = multiprocessing.cpu_count()
+    pool = multiprocessing.Pool(processes=num_processes)
+
+    row_offset = 1
+    for chunk in pd.read_csv(input_csv, chunksize=chunk_size):
+        # Process chunk in parallel
+        chunk_splits = np.array_split(chunk, num_processes)
+        processed_chunks = pool.starmap(process_chunk, 
+            [(split.values.tolist(), columns_to_string, header) for split in chunk_splits])
+
+        # Flatten processed chunks
+        processed_chunk = [row for sublist in processed_chunks for row in sublist]
+
+        # Write processed chunk to Excel
+        write_chunk(worksheet, processed_chunk, row_offset, header, column_b_index, cell_format)
+
+        row_offset += len(processed_chunk)
+        print(f"Processed {row_offset} rows...")
+
+    pool.close()
+    pool.join()
+
+    workbook.close()
+
+    end_time = time.time()
+    print(f"Processing completed in {end_time - start_time:.2f} seconds")
+
+# Example usage
+input_csv = 'huge_file.csv'
+output_excel = 'output_file.xlsx'
+columns_to_string = ['Column1', 'Column2']
+column_b_name = 'ColumnB'  # Replace with the actual name of your column B
+
+process_csv_to_excel(input_csv, output_excel, columns_to_string, column_b_name)
