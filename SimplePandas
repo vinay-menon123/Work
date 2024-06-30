@@ -1,0 +1,54 @@
+import pandas as pd
+import xlsxwriter
+import time
+
+def process_csv_to_excel(input_csv, output_excel, columns_to_string, column_b_name):
+    start_time = time.time()
+
+    # Create Excel workbook and worksheet
+    workbook = xlsxwriter.Workbook(output_excel, {'constant_memory': True})
+    worksheet = workbook.add_worksheet()
+
+    # Create cell format for coloring
+    cell_format = workbook.add_format({'bg_color': '#FFFF00'})
+
+    # Read CSV in chunks
+    chunk_size = 100000
+    row_offset = 0
+
+    for chunk in pd.read_csv(input_csv, chunksize=chunk_size):
+        # Convert specified columns to string
+        for col in columns_to_string:
+            if col in chunk.columns:
+                chunk[col] = chunk[col].astype(str)
+
+        # Write header if it's the first chunk
+        if row_offset == 0:
+            for col, heading in enumerate(chunk.columns):
+                worksheet.write(0, col, heading)
+            row_offset = 1
+
+        # Write data and apply coloring
+        for _, row in chunk.iterrows():
+            columns_to_color = set(row[column_b_name].split(','))
+            for col_index, value in enumerate(row):
+                if chunk.columns[col_index] in columns_to_color:
+                    worksheet.write(row_offset, col_index, value, cell_format)
+                else:
+                    worksheet.write(row_offset, col_index, value)
+            row_offset += 1
+
+        print(f"Processed {row_offset} rows...")
+
+    workbook.close()
+
+    end_time = time.time()
+    print(f"Processing completed in {end_time - start_time:.2f} seconds")
+
+# Example usage
+input_csv = 'huge_file.csv'
+output_excel = 'output_file.xlsx'
+columns_to_string = ['Column1', 'Column2']
+column_b_name = 'ColumnB'  # Replace with the actual name of your column B
+
+process_csv_to_excel(input_csv, output_excel, columns_to_string, column_b_name)
