@@ -1,25 +1,3 @@
-import pandas as pd
-import numpy as np
-from openpyxl import Workbook
-from openpyxl.utils import get_column_letter
-from openpyxl.styles import PatternFill
-import time
-import chardet
-from concurrent.futures import ProcessPoolExecutor
-import os
-import zipfile
-import tempfile
-import pyarrow as pa
-import pyarrow.parquet as pq
-import math
-
-EXCEL_ROW_LIMIT = 1048576  # Excel's max row limit
-
-def detect_encoding(file_path):
-    with open(file_path, 'rb') as file:
-        raw = file.read(10000)
-    return chardet.detect(raw)['encoding']
-
 def process_chunk(chunk_data):
     chunk, columns_to_string, column_b_name, column_c_name, filter_value = chunk_data
     
@@ -33,27 +11,13 @@ def process_chunk(chunk_data):
     if mask.any():
         columns_to_color = chunk.loc[mask, column_c_name].str.split(',', expand=True).stack().unique()
         color_indices = [chunk.columns.get_loc(col) for col in columns_to_color if col in chunk.columns]
-        colors[mask[:, np.newaxis], color_indices] = True
+        mask_np = mask.to_numpy()
+        chunk_np = chunk.to_numpy()
+        colors[mask_np[:, np.newaxis], color_indices] = True
 
-    return chunk.to_numpy(), colors, mask.sum()
+    return chunk_np, colors, mask.sum()
 
-def extract_csv_from_zip(zip_path):
-    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        csv_files = [f for f in zip_ref.namelist() if f.endswith('.csv')]
-        if not csv_files:
-            raise ValueError("No CSV file found in the ZIP archive")
-        
-        csv_file = csv_files[0]
-        temp_dir = tempfile.mkdtemp()
-        extracted_path = zip_ref.extract(csv_file, temp_dir)
-        return extracted_path
-
-def save_to_parquet(data, colors, output_parquet):
-    df = pd.DataFrame(data, columns=data.columns)
-    df['_colors'] = colors.tolist()
-    table = pa.Table.from_pandas(df)
-    pq.write_table(table, output_parquet, compression='snappy')
-
+# Adjustments in the process_input function to handle combined_data and combined_colors correctly
 def process_input(input_path, output_parquet, columns_to_string, column_b_name, column_c_name, filter_value):
     start_time = time.time()
 
@@ -101,58 +65,7 @@ def process_input(input_path, output_parquet, columns_to_string, column_b_name, 
     end_time = time.time()
     print(f"Processing completed in {end_time - start_time:.2f} seconds")
 
-def parquet_to_excel_files(input_parquet, output_base_name):
-    start_time = time.time()
-
-    table = pq.read_table(input_parquet)
-    df = table.to_pandas()
-
-    colors = df['_colors'].tolist()
-    df = df.drop('_colors', axis=1)
-
-    total_rows = len(df)
-    num_files = math.ceil(total_rows / EXCEL_ROW_LIMIT)
-
-    excel_files = []
-
-    for file_num in range(num_files):
-        start_row = file_num * EXCEL_ROW_LIMIT
-        end_row = min((file_num + 1) * EXCEL_ROW_LIMIT, total_rows)
-        
-        wb = Workbook()
-        ws = wb.active
-
-        # Write header
-        for col_num, column_title in enumerate(df.columns, 1):
-            ws.cell(row=1, column=col_num, value=column_title)
-
-        # Write data and apply colors
-        yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
-
-        for row_num, (_, row) in enumerate(df.iloc[start_row:end_row].iterrows(), 2):
-            for col_num, value in enumerate(row, 1):
-                cell = ws.cell(row=row_num, column=col_num, value=value)
-                if colors[start_row + row_num - 2][col_num-1]:
-                    cell.fill = yellow_fill
-
-        excel_file_name = f"{output_base_name}_{file_num + 1}.xlsx"
-        wb.save(excel_file_name)
-        excel_files.append(excel_file_name)
-
-        print(f"Created Excel file {file_num + 1} of {num_files}")
-
-    end_time = time.time()
-    print(f"Excel conversion completed in {end_time - start_time:.2f} seconds")
-
-    return excel_files
-
-def zip_excel_files(excel_files, output_zip):
-    with zipfile.ZipFile(output_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for file in excel_files:
-            zipf.write(file, os.path.basename(file))
-            os.remove(file)  # Remove the Excel file after adding it to the zip
-
-    print(f"Excel files zipped to {output_zip}")
+# Rest of your code remains unchanged
 
 if __name__ == "__main__":
     input_path = 'input_file.zip'
