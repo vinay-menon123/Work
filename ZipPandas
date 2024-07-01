@@ -11,13 +11,12 @@ def process_chunk(chunk_data):
     if mask.any():
         columns_to_color = chunk.loc[mask, column_c_name].str.split(',', expand=True).stack().unique()
         color_indices = [chunk.columns.get_loc(col) for col in columns_to_color if col in chunk.columns]
-        mask_np = mask.to_numpy()
         chunk_np = chunk.to_numpy()
-        colors[mask_np[:, np.newaxis], color_indices] = True
+        for row_index in np.where(mask)[0]:
+            colors[row_index, color_indices] = True
 
     return chunk_np, colors, mask.sum()
 
-# Adjustments in the process_input function to handle combined_data and combined_colors correctly
 def process_input(input_path, output_parquet, columns_to_string, column_b_name, column_c_name, filter_value):
     start_time = time.time()
 
@@ -64,19 +63,3 @@ def process_input(input_path, output_parquet, columns_to_string, column_b_name, 
 
     end_time = time.time()
     print(f"Processing completed in {end_time - start_time:.2f} seconds")
-
-# Rest of your code remains unchanged
-
-if __name__ == "__main__":
-    input_path = 'input_file.zip'
-    output_parquet = 'output_file.parquet'
-    output_base_name = 'output_file'
-    output_zip = 'output_excel_files.zip'
-    columns_to_string = ['Column1', 'Column2']
-    column_b_name = 'ColumnB'
-    column_c_name = 'ColumnC'
-    filter_value = 'A'
-
-    process_input(input_path, output_parquet, columns_to_string, column_b_name, column_c_name, filter_value)
-    excel_files = parquet_to_excel_files(output_parquet, output_base_name)
-    zip_excel_files(excel_files, output_zip)
