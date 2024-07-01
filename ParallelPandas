@@ -1,24 +1,21 @@
 import pandas as pd
-from openpyxl import Workbook, load_workbook
+import numpy as np
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 from openpyxl.styles import PatternFill
 import time
-import math
 import chardet
 from concurrent.futures import ProcessPoolExecutor
 import os
 import zipfile
 import tempfile
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 def detect_encoding(file_path):
     with open(file_path, 'rb') as file:
         raw = file.read(10000)
     return chardet.detect(raw)['encoding']
-
-def safe_value(value):
-    if isinstance(value, (int, float)):
-        if math.isnan(value) or math.isinf(value):
-            return ""
-    return str(value)
 
 def process_chunk(chunk_data):
     chunk, columns_to_string, column_b_name, column_c_name, filter_value = chunk_data
@@ -27,21 +24,15 @@ def process_chunk(chunk_data):
         if col in chunk.columns:
             chunk[col] = chunk[col].astype(str)
 
-    rows = []
-    for _, row in chunk.iterrows():
-        excel_row = []
-        if row[column_b_name] == filter_value:
-            columns_to_color = set(str(row[column_c_name]).split(','))
-            for j, value in enumerate(row):
-                cell_value = safe_value(value)
-                if chunk.columns[j] in columns_to_color:
-                    excel_row.append((cell_value, True))
-                else:
-                    excel_row.append((cell_value, False))
-        else:
-            excel_row = [(safe_value(value), False) for value in row]
-        rows.append(excel_row)
-    return rows
+    mask = chunk[column_b_name] == filter_value
+    colors = np.zeros(chunk.shape, dtype=bool)
+    
+    if mask.any():
+        columns_to_color = chunk.loc[mask, column_c_name].str.split(',', expand=True).stack().unique()
+        color_indices = [chunk.columns.get_loc(col) for col in columns_to_color if col in chunk.columns]
+        colors[mask[:, np.newaxis], color_indices] = True
+
+    return chunk.to_numpy(), colors, mask.sum()
 
 def extract_csv_from_zip(zip_path):
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
@@ -54,21 +45,13 @@ def extract_csv_from_zip(zip_path):
         extracted_path = zip_ref.extract(csv_file, temp_dir)
         return extracted_path
 
-def save_chunk_to_excel(output_excel, rows):
-    wb = load_workbook(output_excel)
-    ws = wb.active
-    yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+def save_to_parquet(data, colors, output_parquet):
+    df = pd.DataFrame(data, columns=data.columns)
+    df['_colors'] = colors.tolist()
+    table = pa.Table.from_pandas(df)
+    pq.write_table(table, output_parquet, compression='snappy')
 
-    for row in rows:
-        ws.append([value for value, _ in row])
-        for col, (_, color) in enumerate(row, start=1):
-            if color:
-                ws.cell(row=ws.max_row, column=col).fill = yellow_fill
-
-    wb.save(output_excel)
-    del wb
-
-def process_input_to_excel(input_path, output_excel, columns_to_string, column_b_name, column_c_name, filter_value):
+def process_input(input_path, output_parquet, columns_to_string, column_b_name, column_c_name, filter_value):
     start_time = time.time()
 
     if input_path.lower().endswith('.zip'):
@@ -80,45 +63,36 @@ def process_input_to_excel(input_path, output_excel, columns_to_string, column_b
     encoding = detect_encoding(csv_path)
     print(f"Detected encoding: {encoding}")
 
-    # Create initial workbook with header
-    wb = Workbook()
-    ws = wb.active
-    header = pd.read_csv(csv_path, nrows=0, encoding=encoding).columns.tolist()
-    ws.append([safe_value(col) for col in header])
-    wb.save(output_excel)
-    del wb
-
-    chunk_size = 100000  # Adjust based on available memory
+    chunk_size = 1000000  # Increased chunk size
     total_rows = 0
-    chunks_to_save = 5  # Number of chunks to process before saving
+    filtered_rows = 0
+
+    # Initialize empty lists to store chunk results
+    all_data = []
+    all_colors = []
 
     with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
         futures = []
-        for chunk in pd.read_csv(csv_path, chunksize=chunk_size, encoding=encoding):
+        for chunk in pd.read_csv(csv_path, chunksize=chunk_size, encoding=encoding, low_memory=False):
             chunk_data = (chunk, columns_to_string, column_b_name, column_c_name, filter_value)
             futures.append(executor.submit(process_chunk, chunk_data))
 
-            if len(futures) >= chunks_to_save:
-                all_rows = []
-                for future in futures:
-                    rows = future.result()
-                    all_rows.extend(rows)
-                    total_rows += len(rows)
+        for future in futures:
+            data, colors, filtered_count = future.result()
+            all_data.append(data)
+            all_colors.append(colors)
+            total_rows += len(data)
+            filtered_rows += filtered_count
 
-                save_chunk_to_excel(output_excel, all_rows)
-                print(f"Processed and saved {total_rows} rows...")
-                futures = []
+    # Combine all chunks
+    combined_data = np.vstack(all_data)
+    combined_colors = np.vstack(all_colors)
 
-        # Process any remaining chunks
-        if futures:
-            all_rows = []
-            for future in futures:
-                rows = future.result()
-                all_rows.extend(rows)
-                total_rows += len(rows)
+    # Save to parquet
+    save_to_parquet(pd.DataFrame(combined_data, columns=chunk.columns), combined_colors, output_parquet)
 
-            save_chunk_to_excel(output_excel, all_rows)
-            print(f"Processed and saved {total_rows} rows...")
+    print(f"Total rows processed: {total_rows}")
+    print(f"Rows matching filter: {filtered_rows}")
 
     if input_path.lower().endswith('.zip'):
         os.remove(csv_path)
@@ -127,12 +101,48 @@ def process_input_to_excel(input_path, output_excel, columns_to_string, column_b
     end_time = time.time()
     print(f"Processing completed in {end_time - start_time:.2f} seconds")
 
+def parquet_to_excel(input_parquet, output_excel):
+    start_time = time.time()
+
+    # Read the parquet file
+    table = pq.read_table(input_parquet)
+    df = table.to_pandas()
+
+    # Extract color information
+    colors = df['_colors'].tolist()
+    df = df.drop('_colors', axis=1)
+
+    # Create a new workbook and select the active sheet
+    wb = Workbook()
+    ws = wb.active
+
+    # Write header
+    for col_num, column_title in enumerate(df.columns, 1):
+        ws.cell(row=1, column=col_num, value=column_title)
+
+    # Write data and apply colors
+    yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+
+    for row_num, (_, row) in enumerate(df.iterrows(), 2):
+        for col_num, value in enumerate(row, 1):
+            cell = ws.cell(row=row_num, column=col_num, value=value)
+            if colors[row_num-2][col_num-1]:
+                cell.fill = yellow_fill
+
+    # Save the workbook
+    wb.save(output_excel)
+
+    end_time = time.time()
+    print(f"Excel conversion completed in {end_time - start_time:.2f} seconds")
+
 if __name__ == "__main__":
     input_path = 'input_file.zip'
+    output_parquet = 'output_file.parquet'
     output_excel = 'output_file.xlsx'
     columns_to_string = ['Column1', 'Column2']
     column_b_name = 'ColumnB'
     column_c_name = 'ColumnC'
     filter_value = 'A'
 
-    process_input_to_excel(input_path, output_excel, columns_to_string, column_b_name, column_c_name, filter_value)
+    process_input(input_path, output_parquet, columns_to_string, column_b_name, column_c_name, filter_value)
+    parquet_to_excel(output_parquet, output_excel)
