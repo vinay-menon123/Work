@@ -21,7 +21,10 @@ def safe_value(value):
             return ""
     return str(value)
 
-def process_chunk(chunk, columns_to_string, column_b_name, column_c_name, filter_value, yellow_fill):
+def process_chunk(chunk_data):
+    chunk, columns_to_string, column_b_name, column_c_name, filter_value = chunk_data
+    yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+    
     # Convert specified columns to string
     for col in columns_to_string:
         if col in chunk.columns:
@@ -75,9 +78,6 @@ def process_input_to_excel(input_path, output_excel, columns_to_string, column_b
     wb = Workbook(write_only=True)
     ws = wb.create_sheet()
 
-    # Prepare fill pattern
-    yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
-
     # Write header
     header = pd.read_csv(csv_path, nrows=0, encoding=encoding).columns.tolist()
     ws.append([safe_value(col) for col in header])
@@ -89,7 +89,8 @@ def process_input_to_excel(input_path, output_excel, columns_to_string, column_b
     with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
         futures = []
         for chunk in pd.read_csv(csv_path, chunksize=chunk_size, encoding=encoding):
-            future = executor.submit(process_chunk, chunk, columns_to_string, column_b_name, column_c_name, filter_value, yellow_fill)
+            chunk_data = (chunk, columns_to_string, column_b_name, column_c_name, filter_value)
+            future = executor.submit(process_chunk, chunk_data)
             futures.append(future)
 
         for future in futures:
@@ -109,12 +110,13 @@ def process_input_to_excel(input_path, output_excel, columns_to_string, column_b
     end_time = time.time()
     print(f"Processing completed in {end_time - start_time:.2f} seconds")
 
-# Example usage
-input_path = 'input_file.zip'  # This can be either a .csv or .zip file
-output_excel = 'output_file.xlsx'
-columns_to_string = ['Column1', 'Column2']
-column_b_name = 'ColumnB'  # Replace with the actual name of your column B
-column_c_name = 'ColumnC'  # Replace with the actual name of your column C
-filter_value = 'A'  # Replace with the actual value you want to filter on in column B
+if __name__ == "__main__":
+    # Example usage
+    input_path = 'input_file.zip'  # This can be either a .csv or .zip file
+    output_excel = 'output_file.xlsx'
+    columns_to_string = ['Column1', 'Column2']
+    column_b_name = 'ColumnB'  # Replace with the actual name of your column B
+    column_c_name = 'ColumnC'  # Replace with the actual name of your column C
+    filter_value = 'A'  # Replace with the actual value you want to filter on in column B
 
-process_input_to_excel(input_path, output_excel, columns_to_string, column_b_name, column_c_name, filter_value)
+    process_input_to_excel(input_path, output_excel, columns_to_string, column_b_name, column_c_name, filter_value)
