@@ -29,12 +29,12 @@ def parquet_to_excel_files(input_parquet, output_base_name):
         for row_idx in range(start_row, end_row):
             excel_row_idx = row_idx - start_row + 2  # Excel row starts at 2 (for header row)
             
+            # Debug print statements
             if excel_row_idx > EXCEL_ROW_LIMIT:
                 raise ValueError(f"Excel row index {excel_row_idx} exceeds limit of {EXCEL_ROW_LIMIT}.")
-            
+            print(f"Writing data to Excel row: {excel_row_idx}, total rows: {total_rows}, file number: {file_num + 1}")
+
             for col_num, value in enumerate(df.iloc[row_idx], 1):
-                if excel_row_idx > EXCEL_ROW_LIMIT:
-                    raise ValueError(f"Excel row index {excel_row_idx} exceeds limit of {EXCEL_ROW_LIMIT}.")
                 cell = ws.cell(row=excel_row_idx, column=col_num, value=value)
                 if colors[row_idx][col_num - 1]:
                     cell.fill = yellow_fill
