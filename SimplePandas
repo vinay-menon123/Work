@@ -1,7 +1,6 @@
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill
-from openpyxl.cell import WriteOnlyCell
 import time
 import math
 import chardet
@@ -23,7 +22,6 @@ def safe_value(value):
 
 def process_chunk(chunk_data):
     chunk, columns_to_string, column_b_name, column_c_name, filter_value = chunk_data
-    yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
     
     # Convert specified columns to string
     for col in columns_to_string:
@@ -38,13 +36,11 @@ def process_chunk(chunk_data):
             for j, value in enumerate(row):
                 cell_value = safe_value(value)
                 if chunk.columns[j] in columns_to_color:
-                    cell = WriteOnlyCell(None, value=cell_value)
-                    cell.fill = yellow_fill
-                    excel_row.append(cell)
+                    excel_row.append((cell_value, True))  # Mark for coloring
                 else:
-                    excel_row.append(cell_value)
+                    excel_row.append((cell_value, False))
         else:
-            excel_row = [safe_value(value) for value in row]
+            excel_row = [(safe_value(value), False) for value in row]
         rows.append(excel_row)
     return rows
 
@@ -75,8 +71,11 @@ def process_input_to_excel(input_path, output_excel, columns_to_string, column_b
     print(f"Detected encoding: {encoding}")
 
     # Create workbook and worksheet
-    wb = Workbook(write_only=True)
-    ws = wb.create_sheet()
+    wb = Workbook()
+    ws = wb.active
+
+    # Prepare fill pattern
+    yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
 
     # Write header
     header = pd.read_csv(csv_path, nrows=0, encoding=encoding).columns.tolist()
@@ -96,9 +95,13 @@ def process_input_to_excel(input_path, output_excel, columns_to_string, column_b
         for future in futures:
             rows = future.result()
             for row in rows:
-                ws.append(row)
-            total_rows += len(rows)
-            print(f"Processed {total_rows} rows...")
+                ws.append([value for value, _ in row])
+                for col, (_, color) in enumerate(row, start=1):
+                    if color:
+                        ws.cell(row=ws.max_row, column=col).fill = yellow_fill
+                total_rows += 1
+                if total_rows % 10000 == 0:
+                    print(f"Processed {total_rows} rows...")
 
     wb.save(output_excel)
 
