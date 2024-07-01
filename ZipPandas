@@ -1,65 +1,45 @@
-def process_chunk(chunk_data):
-    chunk, columns_to_string, column_b_name, column_c_name, filter_value = chunk_data
-    
-    for col in columns_to_string:
-        if col in chunk.columns:
-            chunk[col] = chunk[col].astype(str)
-
-    mask = chunk[column_b_name] == filter_value
-    colors = np.zeros(chunk.shape, dtype=bool)
-    
-    if mask.any():
-        columns_to_color = chunk.loc[mask, column_c_name].str.split(',', expand=True).stack().unique()
-        color_indices = [chunk.columns.get_loc(col) for col in columns_to_color if col in chunk.columns]
-        chunk_np = chunk.to_numpy()
-        for row_index in np.where(mask)[0]:
-            colors[row_index, color_indices] = True
-
-    return chunk_np, colors, mask.sum()
-
-def process_input(input_path, output_parquet, columns_to_string, column_b_name, column_c_name, filter_value):
+def parquet_to_excel_files(input_parquet, output_base_name):
     start_time = time.time()
 
-    if input_path.lower().endswith('.zip'):
-        print("ZIP file detected. Extracting CSV...")
-        csv_path = extract_csv_from_zip(input_path)
-    else:
-        csv_path = input_path
+    table = pq.read_table(input_parquet)
+    df = table.to_pandas()
 
-    encoding = detect_encoding(csv_path)
-    print(f"Detected encoding: {encoding}")
+    colors = df['_colors'].tolist()
+    df = df.drop('_colors', axis=1)
 
-    chunk_size = 1000000
-    total_rows = 0
-    filtered_rows = 0
+    total_rows = len(df)
+    num_files = math.ceil(total_rows / EXCEL_ROW_LIMIT)
 
-    all_data = []
-    all_colors = []
+    excel_files = []
 
-    with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
-        futures = []
-        for chunk in pd.read_csv(csv_path, chunksize=chunk_size, encoding=encoding, low_memory=False):
-            chunk_data = (chunk, columns_to_string, column_b_name, column_c_name, filter_value)
-            futures.append(executor.submit(process_chunk, chunk_data))
+    for file_num in range(num_files):
+        start_row = file_num * EXCEL_ROW_LIMIT
+        end_row = min((file_num + 1) * EXCEL_ROW_LIMIT, total_rows)
+        
+        wb = Workbook()
+        ws = wb.active
 
-        for future in futures:
-            data, colors, filtered_count = future.result()
-            all_data.append(data)
-            all_colors.append(colors)
-            total_rows += len(data)
-            filtered_rows += filtered_count
+        # Write header
+        for col_num, column_title in enumerate(df.columns, 1):
+            ws.cell(row=1, column=col_num, value=column_title)
 
-    combined_data = np.vstack(all_data)
-    combined_colors = np.vstack(all_colors)
+        # Write data and apply colors
+        yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
 
-    save_to_parquet(pd.DataFrame(combined_data, columns=chunk.columns), combined_colors, output_parquet)
+        for row_idx in range(start_row, end_row):
+            excel_row_idx = row_idx - start_row + 2  # Excel row starts at 2 (for header row)
+            for col_num, value in enumerate(df.iloc[row_idx], 1):
+                cell = ws.cell(row=excel_row_idx, column=col_num, value=value)
+                if colors[row_idx][col_num - 1]:
+                    cell.fill = yellow_fill
 
-    print(f"Total rows processed: {total_rows}")
-    print(f"Rows matching filter: {filtered_rows}")
+        excel_file_name = f"{output_base_name}_{file_num + 1}.xlsx"
+        wb.save(excel_file_name)
+        excel_files.append(excel_file_name)
 
-    if input_path.lower().endswith('.zip'):
-        os.remove(csv_path)
-        os.rmdir(os.path.dirname(csv_path))
+        print(f"Created Excel file {file_num + 1} of {num_files}")
 
     end_time = time.time()
-    print(f"Processing completed in {end_time - start_time:.2f} seconds")
+    print(f"Excel conversion completed in {end_time - start_time:.2f} seconds")
+
+    return excel_files
