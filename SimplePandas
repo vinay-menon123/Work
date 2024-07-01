@@ -5,6 +5,10 @@ from openpyxl.cell import WriteOnlyCell
 import time
 import math
 import chardet
+from concurrent.futures import ProcessPoolExecutor
+import os
+import zipfile
+import tempfile
 
 def detect_encoding(file_path):
     with open(file_path, 'rb') as file:
@@ -17,71 +21,100 @@ def safe_value(value):
             return ""
     return str(value)
 
-def process_csv_to_excel(input_csv, output_excel, columns_to_string, column_b_name, column_c_name, filter_value):
-    start_time = time.time()
-
-    # Detect file encoding
-    encoding = detect_encoding(input_csv)
-    print(f"Detected encoding: {encoding}")
-
-    # Read CSV using pandas with detected encoding
-    try:
-        df = pd.read_csv(input_csv, encoding=encoding)
-    except:
-        print("Failed with detected encoding. Trying UTF-8...")
-        df = pd.read_csv(input_csv, encoding='utf-8')
-
+def process_chunk(chunk, columns_to_string, column_b_name, column_c_name, filter_value, yellow_fill):
     # Convert specified columns to string
     for col in columns_to_string:
-        if col in df.columns:
-            df[col] = df[col].astype(str)
+        if col in chunk.columns:
+            chunk[col] = chunk[col].astype(str)
 
-    # Create workbook and worksheet
-    wb = Workbook(write_only=True)
-    ws = wb.create_sheet()
-
-    # Prepare column indices
-    column_b_index = df.columns.get_loc(column_b_name)
-    column_c_index = df.columns.get_loc(column_c_name)
-
-    # Prepare fill pattern
-    yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
-
-    # Write header
-    ws.append([safe_value(col) for col in df.columns])
-
-    # Process rows
-    for i, row in df.iterrows():
+    rows = []
+    for _, row in chunk.iterrows():
         excel_row = []
         if row[column_b_name] == filter_value:
             columns_to_color = set(str(row[column_c_name]).split(','))
             for j, value in enumerate(row):
                 cell_value = safe_value(value)
-                if df.columns[j] in columns_to_color:
-                    cell = WriteOnlyCell(ws, value=cell_value)
+                if chunk.columns[j] in columns_to_color:
+                    cell = WriteOnlyCell(None, value=cell_value)
                     cell.fill = yellow_fill
                     excel_row.append(cell)
                 else:
                     excel_row.append(cell_value)
         else:
             excel_row = [safe_value(value) for value in row]
-        
-        ws.append(excel_row)
+        rows.append(excel_row)
+    return rows
 
-        if (i + 1) % 10000 == 0:
-            print(f"Processed {i + 1} rows...")
+def extract_csv_from_zip(zip_path):
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        csv_files = [f for f in zip_ref.namelist() if f.endswith('.csv')]
+        if not csv_files:
+            raise ValueError("No CSV file found in the ZIP archive")
+        
+        # Extract the first CSV file found
+        csv_file = csv_files[0]
+        temp_dir = tempfile.mkdtemp()
+        extracted_path = zip_ref.extract(csv_file, temp_dir)
+        return extracted_path
+
+def process_input_to_excel(input_path, output_excel, columns_to_string, column_b_name, column_c_name, filter_value):
+    start_time = time.time()
+
+    # Check if input is a ZIP file
+    if input_path.lower().endswith('.zip'):
+        print("ZIP file detected. Extracting CSV...")
+        csv_path = extract_csv_from_zip(input_path)
+    else:
+        csv_path = input_path
+
+    # Detect file encoding
+    encoding = detect_encoding(csv_path)
+    print(f"Detected encoding: {encoding}")
+
+    # Create workbook and worksheet
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet()
+
+    # Prepare fill pattern
+    yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+
+    # Write header
+    header = pd.read_csv(csv_path, nrows=0, encoding=encoding).columns.tolist()
+    ws.append([safe_value(col) for col in header])
+
+    # Process CSV in chunks
+    chunk_size = 100000  # Adjust based on available memory
+    total_rows = 0
+
+    with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
+        futures = []
+        for chunk in pd.read_csv(csv_path, chunksize=chunk_size, encoding=encoding):
+            future = executor.submit(process_chunk, chunk, columns_to_string, column_b_name, column_c_name, filter_value, yellow_fill)
+            futures.append(future)
+
+        for future in futures:
+            rows = future.result()
+            for row in rows:
+                ws.append(row)
+            total_rows += len(rows)
+            print(f"Processed {total_rows} rows...")
 
     wb.save(output_excel)
+
+    # Clean up temporary file if it was a ZIP
+    if input_path.lower().endswith('.zip'):
+        os.remove(csv_path)
+        os.rmdir(os.path.dirname(csv_path))
 
     end_time = time.time()
     print(f"Processing completed in {end_time - start_time:.2f} seconds")
 
 # Example usage
-input_csv = 'huge_file.csv'
+input_path = 'input_file.zip'  # This can be either a .csv or .zip file
 output_excel = 'output_file.xlsx'
 columns_to_string = ['Column1', 'Column2']
 column_b_name = 'ColumnB'  # Replace with the actual name of your column B
 column_c_name = 'ColumnC'  # Replace with the actual name of your column C
 filter_value = 'A'  # Replace with the actual value you want to filter on in column B
 
-process_csv_to_excel(input_csv, output_excel, columns_to_string, column_b_name, column_c_name, filter_value)
+process_input_to_excel(input_path, output_excel, columns_to_string, column_b_name, column_c_name, filter_value)
