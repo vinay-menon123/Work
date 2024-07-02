@@ -1,0 +1,72 @@
+def process_chunk(chunk_data):
+    chunk, columns_to_string, column_b_name, column_c_name, filter_value = chunk_data
+    
+    for col in columns_to_string:
+        if col in chunk.columns:
+            chunk[col] = chunk[col].astype(str)
+
+    mask = chunk[column_b_name] == filter_value
+    colors = np.zeros((len(chunk), len(chunk.columns)), dtype=bool)
+    
+    if mask.any():
+        for idx in chunk[mask].index:
+            columns_to_color = str(chunk.at[idx, column_c_name]).split(',')
+            for col in columns_to_color:
+                col = col.strip()
+                if col in chunk.columns:
+                    colors[chunk.index.get_loc(idx), chunk.columns.get_loc(col)] = True
+
+    return chunk.values, colors, mask.sum()
+
+def save_to_parquet(data, colors, columns, output_parquet):
+    df = pd.DataFrame(data, columns=columns)
+    df['_colors'] = colors.tolist()
+    table = pa.Table.from_pandas(df)
+    pq.write_table(table, output_parquet, compression='snappy')
+
+def process_input(input_path, output_parquet, columns_to_string, column_b_name, column_c_name, filter_value):
+    start_time = time.time()
+
+    if input_path.lower().endswith('.zip'):
+        print("ZIP file detected. Extracting CSV...")
+        csv_path = extract_csv_from_zip(input_path)
+    else:
+        csv_path = input_path
+
+    encoding = detect_encoding(csv_path)
+    print(f"Detected encoding: {encoding}")
+
+    chunk_size = 1000000
+    total_rows = 0
+    filtered_rows = 0
+
+    all_data = []
+    all_colors = []
+
+    with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
+        futures = []
+        for chunk in pd.read_csv(csv_path, chunksize=chunk_size, encoding=encoding, low_memory=False):
+            chunk_data = (chunk, columns_to_string, column_b_name, column_c_name, filter_value)
+            futures.append(executor.submit(process_chunk, chunk_data))
+
+        for future in futures:
+            data, colors, filtered_count = future.result()
+            all_data.append(data)
+            all_colors.append(colors)
+            total_rows += len(data)
+            filtered_rows += filtered_count
+
+    combined_data = np.vstack(all_data)
+    combined_colors = np.vstack(all_colors)
+
+    save_to_parquet(combined_data, combined_colors, chunk.columns, output_parquet)
+
+    print(f"Total rows processed: {total_rows}")
+    print(f"Rows matching filter: {filtered_rows}")
+
+    if input_path.lower().endswith('.zip'):
+        os.remove(csv_path)
+        os.rmdir(os.path.dirname(csv_path))
+
+    end_time = time.time()
+    print(f"Processing completed in {end_time - start_time:.2f} seconds")
