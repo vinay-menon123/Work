@@ -1,0 +1,25 @@
+# Use an official Alpine Python runtime as a parent image
+FROM python:3.9-alpine
+
+# Install build dependencies
+RUN apk add --no-cache \
+    build-base \
+    cmake \
+    git \
+    ninja \
+    boost-dev \
+    zlib-dev \
+    bzip2-dev \
+    libressl-dev \
+    snappy-dev \
+    lz4-dev \
+    zstd-dev \
+    gflags-dev
+
+# Install pyarrow
+RUN pip install --no-cache-dir pyarrow
+
+# Your application code would go here
+
+# Run your application
+CMD ["python", "your_script.py"]
