@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+<head>
+    <title>Upload CSV/ZIP File</title>
+    <style>
+        #message {
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            display: none;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <h1>Upload CSV/ZIP File</h1>
+    <div id="message"></div>
+    <form id="uploadForm" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".csv,.zip">
+        <input type="submit" value="Upload">
+    </form>
+
+    <script>
+    document.getElementById('uploadForm').onsubmit = function(e) {
+        e.preventDefault();
+        var formData = new FormData(this);
+
+        fetch('/', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = data.message;
+            messageDiv.className = data.status === 'success' ? 'success' : 'error';
+            messageDiv.style.display = 'block';
+
+            if (data.status === 'success') {
+                // If file upload was successful, initiate download
+                const blob = new Blob([data.file], {type: 'text/plain'});
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = 'processed_file.txt';
+                document.body.appendChild(a);
+                setTimeout(() => {
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                }, 1000); // Wait for 1 second before starting download
+            }
+        })
+        .catch(error => {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = 'An error occurred: ' + error;
+            messageDiv.className = 'error';
+            messageDiv.style.display = 'block';
+        });
+    };
+    </script>
+</body>
+</html>
