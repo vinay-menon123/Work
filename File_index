@@ -3,30 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        .file-input {
-            display: none;
-        }
-
-        .custom-file-label {
-            display: inline-block;
-            background-color: #007bff;
-            color: white;
-            padding: 10px;
-            cursor: pointer;
-        }
-    </style>
 </head>
 <body>
 
-    <label for="file-upload" class="custom-file-label">Choose CSV/ZIP file</label>
-    <input id="file-upload" class="file-input" type="file" accept=".csv, .zip">
+    <input id="file-upload" type="file" accept=".csv, .zip">
+    <label id="file-label" for="file-upload">Choose CSV/ZIP file</label>
 
     <script>
-        document.getElementById('file-upload').addEventListener('change', function() {
-            const fileName = this.files[0].name;
-            const label = document.querySelector('.custom-file-label');
-            label.textContent = fileName ? fileName : 'Choose CSV/ZIP file';
+        // Initially hide the file input element
+        const fileInput = document.getElementById('file-upload');
+        const fileLabel = document.getElementById('file-label');
+        
+        fileInput.style.display = 'none';
+
+        // When the label is clicked, trigger the file input click
+        fileLabel.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        // When a file is selected, change the label text
+        fileInput.addEventListener('change', function() {
+            const fileName = this.files[0] ? this.files[0].name : 'Choose CSV/ZIP file';
+            fileLabel.textContent = fileName;
         });
     </script>
 
