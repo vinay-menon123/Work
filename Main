@@ -1,7 +1,7 @@
-from flask import Flask, request, render_template, jsonify, send_file
+from flask import Flask, request, send_file, make_response
 from werkzeug.utils import secure_filename
 import os
-import io
+import uuid
 
 app = Flask(__name__)
 
@@ -17,35 +17,90 @@ def allowed_file(filename):
 def upload_and_process():
     if request.method == 'POST':
         if 'file' not in request.files:
-            return jsonify({"message": "No file part", "status": "error"}), 400
+            return make_response(generate_html_message("No file part", "error"), 400)
         
         file = request.files['file']
         
         if file.filename == '':
-            return jsonify({"message": "No file selected", "status": "error"}), 400
+            return make_response(generate_html_message("No file selected", "error"), 400)
         
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
-            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            unique_filename = str(uuid.uuid4()) + '_' + filename
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
             file.save(file_path)
             
-            # Here you would typically process the file
-            # For this example, we'll just read it and send it back
-            
-            with open(file_path, 'rb') as f:
-                file_content = f.read()
-            
-            mem_file = io.BytesIO(file_content)
-            
-            return jsonify({
-                "message": "File upload successful",
-                "status": "success",
-                "file": file_content.decode('utf-8')  # Assuming it's a text file
-            }), 200
+            return send_file(
+                file_path,
+                as_attachment=True,
+                download_name="processed_" + filename,
+                mimetype='application/octet-stream'
+            )
         else:
-            return jsonify({"message": "Only upload zip/csv file", "status": "error"}), 400
+            return make_response(generate_html_message("Only upload zip/csv file", "error"), 400)
     
-    return render_template('upload.html')
+    return generate_html_form()
+
+def generate_html_message(message, message_type):
+    css_styles = """
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 50px;
+            text-align: center;
+        }
+        .message {
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 5px;
+            display: inline-block;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+    </style>
+    """
+    html_content = f"""
+    <html>
+    <head>{css_styles}</head>
+    <body>
+        <div class="message {message_type}">{message}</div>
+        <a href="/">Go back</a>
+    </body>
+    </html>
+    """
+    return html_content
+
+def generate_html_form():
+    css_styles = """
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 50px;
+            text-align: center;
+        }
+    </style>
+    """
+    html_content = f"""
+    <html>
+    <head>{css_styles}</head>
+    <body>
+        <h1>Upload a File</h1>
+        <form method="post" enctype="multipart/form-data">
+            <input type="file" name="file">
+            <button type="submit">Upload</button>
+        </form>
+    </body>
+    </html>
+    """
+    return html_content
 
 if __name__ == '__main__':
     app.run(debug=True)
