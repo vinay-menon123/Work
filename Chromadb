@@ -1,0 +1,34 @@
+def generate_embedding(text):
+    response = openai.Embedding.create(
+        input=text,
+        model="text-embedding-ada-002"
+    )
+    return response['data'][0]['embedding']
+# Create a collection
+collection = client.create_collection(name="my_collection")
+
+# Add documents with embeddings
+documents = ["Example document 1", "Example document 2"]
+for doc in documents:
+    embedding = generate_embedding(doc)
+    collection.add(
+        documents=[doc],
+        embeddings=[embedding],
+        metadatas=[{"source": "example"}]  # Optional metadata
+    )
+# Query example
+query = "Find relevant content"
+query_embedding = generate_embedding(query)
+
+results = collection.query(
+    query_embeddings=[query_embedding],
+    n_results=5  # Number of similar documents to return
+)
+
+for doc, metadata in zip(results['documents'], results['metadatas']):
+    print("Document:", doc)
+    print("Metadata:", metadata)
+
+
+openai api fine_tunes.create -t "data.jsonl" -m "base-model"
+
