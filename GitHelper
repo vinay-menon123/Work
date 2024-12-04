@@ -1,0 +1,45 @@
+import requests
+
+# Replace with the repository URL and your GitHub token (if needed)
+REPO_URL = "https://github.com/owner/repo"
+TOKEN = "your_github_token"  # Use a token if accessing private repos or for higher rate limits
+
+def get_repo_info(repo_url, token=None):
+    # Extract owner and repo name from the URL
+    parts = repo_url.rstrip("/").split("/")
+    owner, repo = parts[-2], parts[-1]
+
+    # GitHub API URL for commits
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/commits"
+
+    # Set up headers for authentication
+    headers = {}
+    if token:
+        headers["Authorization"] = f"token {token}"
+
+    # Fetch commits
+    response = requests.get(api_url, headers=headers)
+    if response.status_code != 200:
+        raise Exception(f"Failed to fetch commits: {response.json().get('message')}")
+
+    commits = response.json()
+
+    # Iterate over each commit and fetch details
+    for commit in commits:
+        sha = commit["sha"]
+        commit_message = commit["commit"]["message"]
+        print(f"Commit: {sha}")
+        print(f"Message: {commit_message}")
+
+        # Fetch files modified in the commit
+        commit_details_url = f"{api_url}/{sha}"
+        commit_response = requests.get(commit_details_url, headers=headers)
+        if commit_response.status_code == 200:
+            files = commit_response.json().get("files", [])
+            print("Modified files:")
+            for file in files:
+                print(f" - {file['filename']}")
+        print("-" * 40)
+
+# Run the function
+get_repo_info(REPO_URL, TOKEN)
