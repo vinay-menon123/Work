@@ -1,0 +1,174 @@
+Here is the updated Java code for connecting to an Oracle database using username, password, host, port, and SID, with proper error handling and resource management:
+
+
+---
+
+Code with Proper Error Handling
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+
+public class OracleDbUtil {
+
+    // Database connection details
+    private static final String DB_URL = "jdbc:oracle:thin:@<host>:<port>:<sid>"; // Replace <host>, <port>, and <sid>
+    private static final String USER = "<username>";  // Replace with your username
+    private static final String PASSWORD = "<password>";  // Replace with your password
+
+    /**
+     * Establishes a connection to the Oracle database.
+     * @return Connection object if successful, null otherwise.
+     */
+    public static Connection getConnection() {
+        Connection connection = null;
+        try {
+            // Attempt to connect to the database
+            connection = DriverManager.getConnection(DB_URL, USER, PASSWORD);
+            System.out.println("Connection to Oracle database established successfully.");
+        } catch (SQLException e) {
+            // Handle SQL exceptions (e.g., incorrect credentials, database unreachable)
+            System.err.println("Error while connecting to the Oracle database:");
+            System.err.println("Error Code: " + e.getErrorCode());
+            System.err.println("SQL State: " + e.getSQLState());
+            System.err.println("Message: " + e.getMessage());
+            e.printStackTrace(); // Log stack trace for debugging
+        }
+        return connection;
+    }
+
+    /**
+     * Main method to test the database connection.
+     */
+    public static void main(String[] args) {
+        Connection connection = null;
+        try {
+            // Get connection
+            connection = getConnection();
+            if (connection != null) {
+                // Perform any operations with the database here
+                System.out.println("Database connection test successful!");
+            } else {
+                System.err.println("Failed to establish a connection to the database.");
+            }
+        } catch (Exception e) {
+            // Catch unexpected errors
+            System.err.println("An unexpected error occurred:");
+            e.printStackTrace();
+        } finally {
+            // Ensure the connection is closed properly
+            if (connection != null) {
+                try {
+                    connection.close();
+                    System.out.println("Database connection closed.");
+                } catch (SQLException e) {
+                    System.err.println("Error while closing the database connection:");
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+}
+
+
+---
+
+Key Points
+
+1. Proper Exception Handling:
+
+SQL errors are caught and printed with details like:
+
+Error Code: Database-specific error codes (e.g., ORA-XXXXX).
+
+SQL State: State of the SQL operation.
+
+Message: Descriptive error message.
+
+
+
+
+2. Resource Cleanup in finally Block:
+
+The Connection is closed in the finally block to ensure no resources are leaked, even if an error occurs.
+
+
+
+3. Custom Error Messages:
+
+Provides meaningful error messages for easier debugging.
+
+
+
+4. Fallback Handling:
+
+If the connection fails, the application won't crash; instead, it prints an appropriate message.
+
+
+
+
+
+---
+
+Replace with Your Database Details
+
+Replace <host>, <port>, <sid>, <username>, and <password> with your actual Oracle database connection details:
+
+Example:
+
+private static final String DB_URL = "jdbc:oracle:thin:@//192.168.1.100:1521:ORCL";
+private static final String USER = "my_user";
+private static final String PASSWORD = "my_password";
+
+
+
+---
+
+Example Output
+
+Successful Connection:
+
+Connection to Oracle database established successfully.
+Database connection test successful!
+Database connection closed.
+
+Invalid Credentials:
+
+Error while connecting to the Oracle database:
+Error Code: 1017
+SQL State: 28000
+Message: ORA-01017: invalid username/password; logon denied
+
+Database Unreachable:
+
+Error while connecting to the Oracle database:
+Error Code: 12541
+SQL State: 08001
+Message: ORA-12541: TNS:no listener
+
+
+---
+
+Additional Suggestions
+
+1. Use a Properties File:
+
+Store sensitive credentials (username, password) in a properties file instead of hardcoding them.
+
+
+
+2. Consider Connection Pools:
+
+For production, use a connection pool like HikariCP for efficient database connections.
+
+
+
+3. Testing Connectivity:
+
+Use tools like tnsping or SQL Developer to verify database accessibility before debugging your code.
+
+
+
+
+Let me know if you need further assistance!
+
