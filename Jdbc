@@ -1,25 +1,31 @@
-List<Object[]> results = query.getResultList();
+List<?> rawResults = query.getResultList();
 
-List<TransactionReport> reports = results.stream()
-    .map(row -> {
+List<TransactionReport> reports = new ArrayList<>();
+
+for (Object row : rawResults) {
+    if (row instanceof Object[]) {
+        Object[] columns = (Object[]) row;
+
         TransactionReport tr = new TransactionReport();
 
-        tr.setUserNine(row[0] != null ? row[0].toString() : null);
-        tr.setOrigCcy(row[1] != null ? row[1].toString() : null);
-        tr.setCreatedDate(row[2] != null ? row[2].toString() : null);
-        tr.setTransDate(row[3] != null ? row[3].toString() : null);
-        tr.setValueDate(row[4] != null ? row[4].toString() : null);
-        tr.setIntlRef(row[5] != null ? row[5].toString() : null);
-        tr.setExtlRef(row[6] != null ? row[6].toString() : null);
-        tr.setStr029(row[7] != null ? row[7].toString() : null);
-        tr.setStr023(row[8] != null ? row[8].toString() : null);
-        tr.setTransactionType(row[9] != null ? row[9].toString() : null);
-        tr.setAmount(row[10] != null ? row[10].toString() : null);
-        tr.setLoadId(row[11] != null ? row[11].toString() : null);
-        tr.setState(row[12] != null ? row[12].toString() : null);
-        tr.setStr061(row[13] != null ? row[13].toString() : null);
-        tr.setLastNoteText(row[14] != null ? row[14].toString() : null);
+        tr.setUserNine(columns[0] != null ? columns[0].toString() : null);
+        tr.setOrigCcy(columns[1] != null ? columns[1].toString() : null);
+        tr.setCreatedDate(columns[2] != null ? columns[2].toString() : null);
+        tr.setTransDate(columns[3] != null ? columns[3].toString() : null);
+        tr.setValueDate(columns[4] != null ? columns[4].toString() : null);
+        tr.setIntlRef(columns[5] != null ? columns[5].toString() : null);
+        tr.setExtlRef(columns[6] != null ? columns[6].toString() : null);
+        tr.setStr029(columns[7] != null ? columns[7].toString() : null);
+        tr.setStr023(columns[8] != null ? columns[8].toString() : null);
+        tr.setTransactionType(columns[9] != null ? columns[9].toString() : null);
+        tr.setAmount(columns[10] != null ? columns[10].toString() : null);
+        tr.setLoadId(columns[11] != null ? columns[11].toString() : null);
+        tr.setState(columns[12] != null ? columns[12].toString() : null);
+        tr.setStr061(columns[13] != null ? columns[13].toString() : null);
+        tr.setLastNoteText(columns[14] != null ? columns[14].toString() : null);
 
-        return tr;
-    })
-    .collect(Collectors.toList());
+        reports.add(tr);
+    } else {
+        System.out.println("Unexpected row type: " + row.getClass());
+    }
+}
